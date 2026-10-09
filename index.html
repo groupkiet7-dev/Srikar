@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Structural Load Matrix Visualizer 3D</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%;background:#000}
+*{box-sizing:border-box}
+body{margin:0;height:100%;background:radial-gradient(ellipse at 50% 70%,#001a33 0%,#000 70%);color:#00ffcc;font-family:ui-monospace,Menlo,Consolas,monospace;overflow:hidden;touch-action:none}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block}
+.scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,#00ffff08 0 1px,transparent 1px 3px);mix-blend-mode:screen}
+h1{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;margin:0;text-align:center;color:#fff;font-size:clamp(13px,3.6vw,24px);letter-spacing:.14em;text-shadow:0 0 14px #00f0ff;pointer-events:none}
+#hud{position:absolute;top:56px;left:10px;font-size:12px;line-height:1.5;background:#001122b3;border:1px solid #00ffcc;border-radius:10px;padding:10px 12px;pointer-events:none;box-shadow:0 0 16px #00ffcc33;white-space:pre}
+#ctl{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);background:#001122b3;border:1px solid #ff00ff88;border-radius:10px;padding:10px 12px;font-size:12px}
+#ctl b{color:#ff66ff}
+input{width:100%;accent-color:#ff00ff;margin-top:6px}
+.hint{position:absolute;right:12px;top:56px;font-size:11px;opacity:.6;text-align:right;pointer-events:none}
+</style></head><body>
+<canvas id="c"></canvas><div class="scan"></div>
+<h1>STRUCTURAL LOAD MATRIX VISUALIZER</h1>
+<div id="hud"></div><div class="hint">DRAG TO ROTATE<br>PINCH-FREE · AUTO-SPIN</div>
+<div id="ctl"><label>TRUCK POSITION: <b id="tp"></b> m &nbsp;·&nbsp; MAX LOAD 120 kN</label><input id="sl" type="range" min="0" max="20" step="0.5" value="14"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const cv=document.getElementById('c'),T=THREE;
+const ren=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+ren.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new T.Scene(),cam=new T.PerspectiveCamera(45,1,.1,300);
+const root=new T.Group();scene.add(root);root.rotation.set(.28,-.7,0);
+const dyn=new T.Group();root.add(dyn);
+const AD={blending:T.AdditiveBlending,transparent:true,depthWrite:false};
+const lm=(c,o)=>new T.LineBasicMaterial({color:c,opacity:o,...AD});
+const bm=(c,o)=>new T.MeshBasicMaterial({color:c,opacity:o,...AD});
+const SC=.1,CX=10,BASE=-14,XS=[0,10,20];
+// ---- static scene ----
+function ring(r,c,o,y){const p=[];for(let i=0;i<=96;i++){const a=i/96*6.2832;p.push(new T.Vector3(Math.cos(a)*r,y,Math.sin(a)*r))}
+ return new T.Line(new T.BufferGeometry().setFromPoints(p),lm(c,o))}
+[15,13,9,5].forEach((r,i)=>root.add(ring(r,i?0x00aaff:0x0044ff,i?.5:.95,BASE)));
+const base=new T.Mesh(new T.CircleGeometry(15,64).rotateX(-Math.PI/2),bm(0x0033ff,.12));base.position.y=BASE;root.add(base);
+for(let i=0;i<12;i++){const a=i/12*6.2832;root.add(new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(Math.cos(a)*15,BASE,Math.sin(a)*15),new T.Vector3(Math.cos(a)*5,0,Math.sin(a)*5)]),lm(0x00f0ff,.18)))}
+// holo cone surface
+const cone=new T.Mesh(new T.CylinderGeometry(5,15,-BASE,48,1,true).translate(0,BASE/2,0),bm(0x00aaff,.05));cone.material.side=T.DoubleSide;root.add(cone);
+// deck wireframe
+const dk=[];for(let x=-12;x<=12;x+=1){dk.push(x,0,-3,x,0,3)}for(let z=-3;z<=3;z+=1){dk.push(-12,0,z,12,0,z)}
+const dg=new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(dk,3));
+root.add(new T.LineSegments(dg,lm(0x00f0ff,.4)));
+const spine=new T.Mesh(new T.BoxGeometry(24,.12,.12),bm(0x00ffff,.9));root.add(spine);
+// pillars
+XS.forEach(x=>{const px=x-CX;const m=new T.Mesh(new T.CylinderGeometry(.18,.18,-BASE,10).translate(0,BASE/2,0),bm(0x0033ff,.7));m.position.x=px;root.add(m);
+ const g=new T.Mesh(new T.CylinderGeometry(.5,.5,-BASE,10).translate(0,BASE/2,0),bm(0x0055ff,.12));g.position.x=px;root.add(g)});
+// particles
+const N=220,pp=new Float32Array(N*3),pv=[];
+for(let i=0;i<N;i++){const a=Math.random()*6.28,r=Math.sqrt(Math.random())*14;pp[i*3]=Math.cos(a)*r;pp[i*3+1]=BASE+Math.random()*-BASE;pp[i*3+2]=Math.sin(a)*r;pv.push(.02+Math.random()*.05)}
+const pg=new T.BufferGeometry().setAttribute('position',new T.BufferAttribute(pp,3));
+root.add(new T.Points(pg,new T.PointsMaterial({color:0x66ffff,size:.22,opacity:.7,...AD})));
+// ---- helpers ----
+function label(txt,col){const c=document.createElement('canvas');c.width=300;c.height=110;const g=c.getContext('2d');
+ g.font='bold 30px monospace';g.textAlign='center';g.shadowColor=col;g.shadowBlur=12;g.fillStyle=col;
+ txt.split('\n').forEach((l,i)=>g.fillText(l,150,40+i*38));
+ const s=new T.Sprite(new T.SpriteMaterial({map:new T.CanvasTexture(c),transparent:true,depthWrite:false}));s.scale.set(7.5,2.75,1);return s}
+function vec(x,z,yTail,yTip,col){const s=Math.sign(yTip-yTail),L=Math.abs(yTip-yTail),g=new T.Group(),hd=1.3;
+ const sh=Math.max(L-hd,.1);
+ const core=new T.Mesh(new T.CylinderGeometry(.1,.1,sh,8),bm(0xffffff,.95));
+ const glow=new T.Mesh(new T.CylinderGeometry(.32,.32,sh,8),bm(col,.28));
+ const head=new T.Mesh(new T.ConeGeometry(.5,hd,12),bm(col,.95));
+ const mid=yTail+s*sh/2;core.position.y=glow.position.y=mid;
+ head.position.y=yTip-s*hd/2;if(s<0)head.rotation.z=Math.PI;
+ g.add(core,glow,head);g.position.set(x-CX,0,z);return g}
+function solve(a,b){const n=3,m=a.map((r,i)=>[...r,b[i]]);
+ for(let i=0;i<n;i++){let p=i;for(let r=i+1;r<n;r++)if(Math.abs(m[r][i])>Math.abs(m[p][i]))p=r;[m[i],m[p]]=[m[p],m[i]];
+  for(let r=0;r<n;r++)if(r!=i){const f=m[r][i]/m[i][i];for(let c=i;c<=n;c++)m[r][c]-=f*m[i][c]}}
+ return m.map((r,i)=>r[n]/r[i])}
+const A=[[1,1,1],[0,10,20],[1,-2,1]],f1=n=>n.toFixed(1);
+function build(){
+ while(dyn.children.length){const o=dyn.children[0];dyn.remove(o);o.traverse(k=>{k.geometry&&k.geometry.dispose();if(k.material){k.material.map&&k.material.map.dispose();k.material.dispose()}})}
+ const tx=+sl.value;tp.textContent=tx.toFixed(1);
+ const L=[[4,50],[tx,120],[15,60]],sP=230,sM=L.reduce((s,l)=>s+l[0]*l[1],0);
+ const R=solve(A,[sP,sM,0]);
+ L.forEach(([x,p])=>{const t=p==120,c=t?0xff00ff:0xffaa00,len=p*SC+1.4;
+  dyn.add(vec(x,0,1.3+len,1.3,c));
+  const sp=label(t?`TRUCK\n${p} kN`:`${p} kN`,t?'#ff44ff':'#ffbb33');sp.position.set(x-CX,1.3+len+1.8,0);dyn.add(sp);
+  if(t){const bx=new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(3,1,2)),lm(0xff00ff,1));bx.position.set(x-CX,.55,0);dyn.add(bx);
+   const bf=new T.Mesh(new T.BoxGeometry(3,1,2),bm(0xff00ff,.2));bf.position.copy(bx.position);dyn.add(bf)}});
+ R.forEach((r,i)=>{const len=Math.max(r,0)*SC+1.4;
+  dyn.add(vec(XS[i],2,-.6-len,-.6,0x00ffff));
+  const sp=label(`R${i+1}\n${f1(r)} kN`,'#00ffff');sp.position.set(XS[i]-CX,-.6-len-1.6,2);dyn.add(sp)});
+ hud.textContent=`SYS. ONLINE: AX=B PROTOCOL\n--------------------------\nDET(A)   : 60.00\nTRUCK POS: ${f1(tx)} m\nSUM P    : ${sP} kN\nR1 : ${f1(R[0])} kN\nR2 : ${f1(R[1])} kN\nR3 : ${f1(R[2])} kN`}
+// ---- interaction ----
+let drag=false,lx=0,ly=0,idle=0;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointerup',()=>{drag=false;idle=0});
+cv.addEventListener('pointermove',e=>{if(!drag)return;root.rotation.y+=(e.clientX-lx)*.008;root.rotation.x=Math.max(-.3,Math.min(1.2,root.rotation.x+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY});
+sl.oninput=build;
+function size(){const w=innerWidth,h=innerHeight;ren.setSize(w,h,false);cam.aspect=w/h;cam.position.set(0,6,w/h<.8?78:50);cam.lookAt(0,-3,0);cam.updateProjectionMatrix()}
+addEventListener('resize',size);size();build();
+(function loop(){requestAnimationFrame(loop);
+ if(!drag)root.rotation.y+=.0035;
+ const a=pg.attributes.position;for(let i=0;i<N;i++){let y=a.getY(i)+pv[i]*3;if(y>0)y=BASE;a.setY(i,y)}a.needsUpdate=true;
+ ren.render(scene,cam)})();
+</script></body></html>
